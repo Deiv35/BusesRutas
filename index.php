@@ -1,4 +1,5 @@
 <?php
+session_start();
 require_once("conexion.php");
 
 function limpiar($dato) {
@@ -254,9 +255,28 @@ try {
 <div class="navbar">
     <img src="logo.jpg" class="logo" alt="Logo">
     <div class="nav-buttons">
-        <a href="mapa.php"><button type="button">Mapa</button></a>
+
+    <a href="mapa.php"><button type="button">Mapa</button></a>
+
+    <?php if (isset($_SESSION['usuario'])): ?>
+
+        <span style="margin-left:10px; margin-right:10px;">
+            👤 <?php echo limpiar($_SESSION['usuario']); ?>
+        </span>
+
+        <?php if (isset($_SESSION['rol']) && $_SESSION['rol'] === 'admin'): ?>
+            <a href="admin.php"><button type="button">Panel Admin</button></a>
+        <?php endif; ?>
+
+        <a href="logout.php"><button type="button">Cerrar sesión</button></a>
+
+    <?php else: ?>
+
         <a href="login.php"><button type="button">Iniciar Sesión</button></a>
-    </div>
+
+    <?php endif; ?>
+
+</div>
 </div>
 
 <div class="banner">
