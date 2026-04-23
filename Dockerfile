@@ -1,32 +1,29 @@
 FROM php:8.2-apache
 
-# Instalar dependencias necesarias
 RUN apt-get update && apt-get install -y \
-    gnupg2 \
+    unixodbc \
+    unixodbc-dev \
     curl \
+    gnupg2 \
     apt-transport-https \
-    ca-certificates \
-    unixodbc-dev
+    ca-certificates
 
-# Agregar clave de Microsoft (forma moderna)
+# Clave Microsoft (moderna)
 RUN curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg
 
-# Agregar repositorio de Microsoft
+# Repo
 RUN echo "deb [signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list
 
-# Instalar drivers ODBC
+# Instalar ODBC
 RUN apt-get update && ACCEPT_EULA=Y apt-get install -y msodbcsql17
 
-# Instalar extensiones PHP
-RUN pecl install sqlsrv pdo_sqlsrv && docker-php-ext-enable sqlsrv pdo_sqlsrv
+# Activar PDO ODBC (clave 🔥)
+RUN docker-php-ext-install pdo_odbc
 
-# Habilitar Apache
+# Apache
 RUN a2enmod rewrite
 
-# Copiar proyecto
 COPY . /var/www/html/
-
-# Permisos
 RUN chown -R www-data:www-data /var/www/html
 
 EXPOSE 80
