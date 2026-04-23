@@ -6,14 +6,14 @@ $password   = "2Fb%y9-EH_z7";
 
 try {
     $conn = new PDO(
-        "sqlsrv:Server=$serverName;Database=$database;Encrypt=true;TrustServerCertificate=true",
+        "odbc:Driver={ODBC Driver 17 for SQL Server};Server=$serverName;Database=$database;",
         $username,
         $password
     );
 
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    //echo "Conexión exitosa";
+    // echo "Conexión exitosa";
 } catch (PDOException $e) {
     die("Error de conexión: " . $e->getMessage());
 }
