@@ -17,15 +17,28 @@ function limpiar($dato) {
     return htmlspecialchars((string)$dato, ENT_QUOTES, 'UTF-8');
 }
 
+function normalizarHora($hora) {
+    $hora = trim((string)$hora);
+
+    if ($hora === "") {
+        return "";
+    }
+
+    // Si viene como 08:30, convertir a 08:30:00
+    if (preg_match('/^\d{2}:\d{2}$/', $hora)) {
+        return $hora . ":00";
+    }
+
+    return $hora;
+}
+
 try {
-    // =========================================
-    // OBTENER EMPRESA DEL USUARIO LOGUEADO
-    // =========================================
+    // OBTENER EMPRESA DEL USUARIO
     $sqlEmpresa = "SELECT IdEmpresa, IdUsuario, NombreEmpresa, NIT, Direccion, Telefono, Ciudad, CorreoEmpresa, NombreContacto, Estado
                    FROM Empresas
                    WHERE IdUsuario = :id_usuario";
     $stmtEmpresa = $conn->prepare($sqlEmpresa);
-    $stmtEmpresa->bindParam(':id_usuario', $idUsuario, PDO::PARAM_INT);
+    $stmtEmpresa->bindValue(':id_usuario', $idUsuario, PDO::PARAM_INT);
     $stmtEmpresa->execute();
     $empresa = $stmtEmpresa->fetch(PDO::FETCH_ASSOC);
 
@@ -35,17 +48,15 @@ try {
 
     $idEmpresa = (int)$empresa['IdEmpresa'];
 
-    // =========================================
-    // ACTUALIZAR INFORMACIÓN DE LA EMPRESA
-    // =========================================
+    // ACTUALIZAR EMPRESA
     if (isset($_POST['actualizar_empresa'])) {
-        $nombreEmpresa = trim($_POST['nombre_empresa']);
-        $nit = trim($_POST['nit']);
-        $direccion = trim($_POST['direccion']);
-        $telefono = trim($_POST['telefono']);
-        $ciudad = trim($_POST['ciudad']);
-        $correoEmpresa = trim($_POST['correo_empresa']);
-        $nombreContacto = trim($_POST['nombre_contacto']);
+        $nombreEmpresa = trim($_POST['nombre_empresa'] ?? '');
+        $nit = trim($_POST['nit'] ?? '');
+        $direccion = trim($_POST['direccion'] ?? '');
+        $telefono = trim($_POST['telefono'] ?? '');
+        $ciudad = trim($_POST['ciudad'] ?? '');
+        $correoEmpresa = trim($_POST['correo_empresa'] ?? '');
+        $nombreContacto = trim($_POST['nombre_contacto'] ?? '');
 
         if ($nombreEmpresa === "" || $nit === "" || $direccion === "" || $telefono === "" || $ciudad === "") {
             throw new Exception("Completa los datos obligatorios de la empresa.");
@@ -60,133 +71,136 @@ try {
                                  CorreoEmpresa = :correo_empresa,
                                  NombreContacto = :nombre_contacto
                              WHERE IdEmpresa = :id_empresa";
+
         $stmtUpdateEmpresa = $conn->prepare($sqlUpdateEmpresa);
-        $stmtUpdateEmpresa->bindParam(':nombre_empresa', $nombreEmpresa);
-        $stmtUpdateEmpresa->bindParam(':nit', $nit);
-        $stmtUpdateEmpresa->bindParam(':direccion', $direccion);
-        $stmtUpdateEmpresa->bindParam(':telefono', $telefono);
-        $stmtUpdateEmpresa->bindParam(':ciudad', $ciudad);
-        $stmtUpdateEmpresa->bindParam(':correo_empresa', $correoEmpresa);
-        $stmtUpdateEmpresa->bindParam(':nombre_contacto', $nombreContacto);
-        $stmtUpdateEmpresa->bindParam(':id_empresa', $idEmpresa, PDO::PARAM_INT);
+        $stmtUpdateEmpresa->bindValue(':nombre_empresa', $nombreEmpresa);
+        $stmtUpdateEmpresa->bindValue(':nit', $nit);
+        $stmtUpdateEmpresa->bindValue(':direccion', $direccion);
+        $stmtUpdateEmpresa->bindValue(':telefono', $telefono);
+        $stmtUpdateEmpresa->bindValue(':ciudad', $ciudad);
+        $stmtUpdateEmpresa->bindValue(':correo_empresa', $correoEmpresa);
+        $stmtUpdateEmpresa->bindValue(':nombre_contacto', $nombreContacto);
+        $stmtUpdateEmpresa->bindValue(':id_empresa', $idEmpresa, PDO::PARAM_INT);
         $stmtUpdateEmpresa->execute();
 
         $mensaje = "Información de la empresa actualizada correctamente.";
 
-        // recargar empresa
         $stmtEmpresa->execute();
         $empresa = $stmtEmpresa->fetch(PDO::FETCH_ASSOC);
     }
 
-    // =========================================
     // CREAR RUTA
-    // =========================================
     if (isset($_POST['crear_ruta'])) {
-    $nombreRuta = trim($_POST['nombre_ruta']);
-    $horaInicio = trim($_POST['hora_inicio']);
-    $horaFin = trim($_POST['hora_fin']);
-    $descripcionRuta = trim($_POST['descripcion_ruta']);
-    $municipiosSeleccionados = isset($_POST['municipios']) ? $_POST['municipios'] : [];
+        $nombreRuta = trim($_POST['nombre_ruta'] ?? '');
+        $horaInicio = normalizarHora($_POST['hora_inicio'] ?? '');
+        $horaFin = normalizarHora($_POST['hora_fin'] ?? '');
+        $descripcionRuta = trim($_POST['descripcion_ruta'] ?? '');
+        $municipiosSeleccionados = isset($_POST['municipios']) && is_array($_POST['municipios'])
+            ? $_POST['municipios']
+            : [];
 
-    if ($nombreRuta === "" || $horaInicio === "" || $horaFin === "" || $descripcionRuta === "") {
-        throw new Exception("Todos los campos principales de la ruta son obligatorios.");
-    }
+        if ($nombreRuta === "" || $horaInicio === "" || $horaFin === "" || $descripcionRuta === "") {
+            throw new Exception("Todos los campos principales de la ruta son obligatorios.");
+        }
 
-    if (count($municipiosSeleccionados) < 2) {
-        throw new Exception("Debes seleccionar al menos dos municipios para la ruta.");
-    }
+        if (count($municipiosSeleccionados) < 2) {
+            throw new Exception("Debes seleccionar al menos dos municipios para la ruta.");
+        }
 
-    if ($horaInicio >= $horaFin) {
-        throw new Exception("La hora de inicio debe ser menor que la hora de fin.");
-    }
+        if ($horaInicio >= $horaFin) {
+            throw new Exception("La hora de inicio debe ser menor que la hora de fin.");
+        }
 
-    $conn->beginTransaction();
+        $conn->beginTransaction();
 
-    // 1. Insertar ruta y obtener IdRuta directamente
-    $sqlInsertRuta = "INSERT INTO Rutas (IdEmpresa, NombreRuta, HoraInicio, HoraFin)
-                      OUTPUT INSERTED.IdRuta
-                      VALUES (:id_empresa, :nombre_ruta, :hora_inicio, :hora_fin)";
-    $stmtInsertRuta = $conn->prepare($sqlInsertRuta);
-    $stmtInsertRuta->bindParam(':id_empresa', $idEmpresa, PDO::PARAM_INT);
-    $stmtInsertRuta->bindParam(':nombre_ruta', $nombreRuta);
-    $stmtInsertRuta->bindParam(':hora_inicio', $horaInicio);
-    $stmtInsertRuta->bindParam(':hora_fin', $horaFin);
-    $stmtInsertRuta->execute();
+        $sqlInsertRuta = "INSERT INTO Rutas (IdEmpresa, NombreRuta, HoraInicio, HoraFin)
+                          OUTPUT INSERTED.IdRuta
+                          VALUES (:id_empresa, :nombre_ruta, CONVERT(time, :hora_inicio), CONVERT(time, :hora_fin))";
 
-    $idRuta = (int)$stmtInsertRuta->fetchColumn();
+        $stmtInsertRuta = $conn->prepare($sqlInsertRuta);
+        $stmtInsertRuta->bindValue(':id_empresa', $idEmpresa, PDO::PARAM_INT);
+        $stmtInsertRuta->bindValue(':nombre_ruta', $nombreRuta);
+        $stmtInsertRuta->bindValue(':hora_inicio', $horaInicio);
+        $stmtInsertRuta->bindValue(':hora_fin', $horaFin);
+        $stmtInsertRuta->execute();
 
-    if ($idRuta <= 0) {
-        throw new Exception("No se pudo obtener el Id de la ruta creada.");
-    }
+        $idRuta = (int)$stmtInsertRuta->fetchColumn();
 
-    // 2. Insertar detalle de ruta
-    $sqlInsertDetalle = "INSERT INTO RutaDetalle (IdRuta, DescripcionRuta)
-                         VALUES (:id_ruta, :descripcion)";
-    $stmtInsertDetalle = $conn->prepare($sqlInsertDetalle);
-    $stmtInsertDetalle->bindParam(':id_ruta', $idRuta, PDO::PARAM_INT);
-    $stmtInsertDetalle->bindParam(':descripcion', $descripcionRuta);
-    $stmtInsertDetalle->execute();
+        if ($idRuta <= 0) {
+            throw new Exception("No se pudo obtener el Id de la ruta creada.");
+        }
 
-    // 3. Insertar municipios del recorrido en orden
-    $sqlInsertMunicipioRuta = "INSERT INTO RutaMunicipios (IdRuta, IdMunicipio, OrdenRecorrido)
-                               VALUES (:id_ruta, :id_municipio, :orden)";
-    $stmtInsertMunicipioRuta = $conn->prepare($sqlInsertMunicipioRuta);
+        $sqlInsertDetalle = "INSERT INTO RutaDetalle (IdRuta, DescripcionRuta)
+                             VALUES (:id_ruta, :descripcion)";
+        $stmtInsertDetalle = $conn->prepare($sqlInsertDetalle);
+        $stmtInsertDetalle->bindValue(':id_ruta', $idRuta, PDO::PARAM_INT);
+        $stmtInsertDetalle->bindValue(':descripcion', $descripcionRuta);
+        $stmtInsertDetalle->execute();
 
-    $ordenRecorrido = 1;
-    foreach ($municipiosSeleccionados as $idMunicipio) {
-        $idMunicipio = (int)$idMunicipio;
+        $sqlInsertMunicipioRuta = "INSERT INTO RutaMunicipios (IdRuta, IdMunicipio, OrdenRecorrido)
+                                   VALUES (:id_ruta, :id_municipio, :orden)";
+        $stmtInsertMunicipioRuta = $conn->prepare($sqlInsertMunicipioRuta);
 
-        $stmtInsertMunicipioRuta->bindParam(':id_ruta', $idRuta, PDO::PARAM_INT);
-        $stmtInsertMunicipioRuta->bindParam(':id_municipio', $idMunicipio, PDO::PARAM_INT);
-        $stmtInsertMunicipioRuta->bindParam(':orden', $ordenRecorrido, PDO::PARAM_INT);
-        $stmtInsertMunicipioRuta->execute();
+        $ordenRecorrido = 1;
 
-        $ordenRecorrido++;
-    }
+        foreach ($municipiosSeleccionados as $idMunicipio) {
+            $idMunicipio = (int)$idMunicipio;
 
-    // 4. Insertar paradas
-    if (isset($_POST['nombre_parada']) && is_array($_POST['nombre_parada'])) {
-        $sqlInsertParada = "INSERT INTO ParadasRuta (IdRuta, NombreParada, DireccionReferencia, Observaciones, OrdenParada)
-                            VALUES (:id_ruta, :nombre_parada, :direccion_referencia, :observaciones, :orden_parada)";
-        $stmtInsertParada = $conn->prepare($sqlInsertParada);
+            if ($idMunicipio <= 0) {
+                continue;
+            }
 
-        $nombresParada = $_POST['nombre_parada'];
-        $direccionesParada = isset($_POST['direccion_parada']) ? $_POST['direccion_parada'] : [];
-        $observacionesParada = isset($_POST['observacion_parada']) ? $_POST['observacion_parada'] : [];
+            $stmtInsertMunicipioRuta->bindValue(':id_ruta', $idRuta, PDO::PARAM_INT);
+            $stmtInsertMunicipioRuta->bindValue(':id_municipio', $idMunicipio, PDO::PARAM_INT);
+            $stmtInsertMunicipioRuta->bindValue(':orden', $ordenRecorrido, PDO::PARAM_INT);
+            $stmtInsertMunicipioRuta->execute();
 
-        $ordenParada = 1;
-        for ($i = 0; $i < count($nombresParada); $i++) {
-            $nombreParada = trim($nombresParada[$i]);
-            $direccionReferencia = isset($direccionesParada[$i]) ? trim($direccionesParada[$i]) : "";
-            $observaciones = isset($observacionesParada[$i]) ? trim($observacionesParada[$i]) : "";
+            $ordenRecorrido++;
+        }
 
-            if ($nombreParada !== "") {
-                $stmtInsertParada->bindParam(':id_ruta', $idRuta, PDO::PARAM_INT);
-                $stmtInsertParada->bindParam(':nombre_parada', $nombreParada);
-                $stmtInsertParada->bindParam(':direccion_referencia', $direccionReferencia);
-                $stmtInsertParada->bindParam(':observaciones', $observaciones);
-                $stmtInsertParada->bindParam(':orden_parada', $ordenParada, PDO::PARAM_INT);
-                $stmtInsertParada->execute();
+        if (isset($_POST['nombre_parada']) && is_array($_POST['nombre_parada'])) {
+            $sqlInsertParada = "INSERT INTO ParadasRuta (IdRuta, NombreParada, DireccionReferencia, Observaciones, OrdenParada)
+                                VALUES (:id_ruta, :nombre_parada, :direccion_referencia, :observaciones, :orden_parada)";
+            $stmtInsertParada = $conn->prepare($sqlInsertParada);
 
-                $ordenParada++;
+            $nombresParada = $_POST['nombre_parada'];
+            $direccionesParada = $_POST['direccion_parada'] ?? [];
+            $observacionesParada = $_POST['observacion_parada'] ?? [];
+
+            $ordenParada = 1;
+
+            for ($i = 0; $i < count($nombresParada); $i++) {
+                $nombreParada = trim($nombresParada[$i] ?? '');
+                $direccionReferencia = trim($direccionesParada[$i] ?? '');
+                $observaciones = trim($observacionesParada[$i] ?? '');
+
+                if ($nombreParada !== "") {
+                    $stmtInsertParada->bindValue(':id_ruta', $idRuta, PDO::PARAM_INT);
+                    $stmtInsertParada->bindValue(':nombre_parada', $nombreParada);
+                    $stmtInsertParada->bindValue(':direccion_referencia', $direccionReferencia);
+                    $stmtInsertParada->bindValue(':observaciones', $observaciones);
+                    $stmtInsertParada->bindValue(':orden_parada', $ordenParada, PDO::PARAM_INT);
+                    $stmtInsertParada->execute();
+
+                    $ordenParada++;
+                }
             }
         }
+
+        $conn->commit();
+        $mensaje = "Ruta creada correctamente.";
     }
 
-    $conn->commit();
-    $mensaje = "Ruta creada correctamente.";
-}
-
-    // =========================================
     // ACTUALIZAR RUTA
-    // =========================================
     if (isset($_POST['actualizar_ruta'])) {
-        $idRuta = (int)$_POST['id_ruta'];
-        $nombreRuta = trim($_POST['nombre_ruta']);
-        $horaInicio = trim($_POST['hora_inicio']);
-        $horaFin = trim($_POST['hora_fin']);
-        $descripcionRuta = trim($_POST['descripcion_ruta']);
-        $municipiosSeleccionados = isset($_POST['municipios']) ? $_POST['municipios'] : [];
+        $idRuta = (int)($_POST['id_ruta'] ?? 0);
+        $nombreRuta = trim($_POST['nombre_ruta'] ?? '');
+        $horaInicio = normalizarHora($_POST['hora_inicio'] ?? '');
+        $horaFin = normalizarHora($_POST['hora_fin'] ?? '');
+        $descripcionRuta = trim($_POST['descripcion_ruta'] ?? '');
+        $municipiosSeleccionados = isset($_POST['municipios']) && is_array($_POST['municipios'])
+            ? $_POST['municipios']
+            : [];
 
         if ($idRuta <= 0) {
             throw new Exception("Ruta inválida.");
@@ -206,8 +220,8 @@ try {
 
         $sqlValidarRuta = "SELECT IdRuta FROM Rutas WHERE IdRuta = :id_ruta AND IdEmpresa = :id_empresa";
         $stmtValidarRuta = $conn->prepare($sqlValidarRuta);
-        $stmtValidarRuta->bindParam(':id_ruta', $idRuta, PDO::PARAM_INT);
-        $stmtValidarRuta->bindParam(':id_empresa', $idEmpresa, PDO::PARAM_INT);
+        $stmtValidarRuta->bindValue(':id_ruta', $idRuta, PDO::PARAM_INT);
+        $stmtValidarRuta->bindValue(':id_empresa', $idEmpresa, PDO::PARAM_INT);
         $stmtValidarRuta->execute();
 
         if (!$stmtValidarRuta->fetch(PDO::FETCH_ASSOC)) {
@@ -218,20 +232,21 @@ try {
 
         $sqlUpdateRuta = "UPDATE Rutas
                           SET NombreRuta = :nombre_ruta,
-                              HoraInicio = :hora_inicio,
-                              HoraFin = :hora_fin
+                              HoraInicio = CONVERT(time, :hora_inicio),
+                              HoraFin = CONVERT(time, :hora_fin)
                           WHERE IdRuta = :id_ruta AND IdEmpresa = :id_empresa";
+
         $stmtUpdateRuta = $conn->prepare($sqlUpdateRuta);
-        $stmtUpdateRuta->bindParam(':nombre_ruta', $nombreRuta);
-        $stmtUpdateRuta->bindParam(':hora_inicio', $horaInicio);
-        $stmtUpdateRuta->bindParam(':hora_fin', $horaFin);
-        $stmtUpdateRuta->bindParam(':id_ruta', $idRuta, PDO::PARAM_INT);
-        $stmtUpdateRuta->bindParam(':id_empresa', $idEmpresa, PDO::PARAM_INT);
+        $stmtUpdateRuta->bindValue(':nombre_ruta', $nombreRuta);
+        $stmtUpdateRuta->bindValue(':hora_inicio', $horaInicio);
+        $stmtUpdateRuta->bindValue(':hora_fin', $horaFin);
+        $stmtUpdateRuta->bindValue(':id_ruta', $idRuta, PDO::PARAM_INT);
+        $stmtUpdateRuta->bindValue(':id_empresa', $idEmpresa, PDO::PARAM_INT);
         $stmtUpdateRuta->execute();
 
         $sqlExisteDetalle = "SELECT IdRutaDetalle FROM RutaDetalle WHERE IdRuta = :id_ruta";
         $stmtExisteDetalle = $conn->prepare($sqlExisteDetalle);
-        $stmtExisteDetalle->bindParam(':id_ruta', $idRuta, PDO::PARAM_INT);
+        $stmtExisteDetalle->bindValue(':id_ruta', $idRuta, PDO::PARAM_INT);
         $stmtExisteDetalle->execute();
         $detalleExiste = $stmtExisteDetalle->fetch(PDO::FETCH_ASSOC);
 
@@ -240,22 +255,21 @@ try {
                                  SET DescripcionRuta = :descripcion
                                  WHERE IdRuta = :id_ruta";
             $stmtUpdateDetalle = $conn->prepare($sqlUpdateDetalle);
-            $stmtUpdateDetalle->bindParam(':descripcion', $descripcionRuta);
-            $stmtUpdateDetalle->bindParam(':id_ruta', $idRuta, PDO::PARAM_INT);
+            $stmtUpdateDetalle->bindValue(':descripcion', $descripcionRuta);
+            $stmtUpdateDetalle->bindValue(':id_ruta', $idRuta, PDO::PARAM_INT);
             $stmtUpdateDetalle->execute();
         } else {
             $sqlInsertDetalle = "INSERT INTO RutaDetalle (IdRuta, DescripcionRuta)
                                  VALUES (:id_ruta, :descripcion)";
             $stmtInsertDetalle = $conn->prepare($sqlInsertDetalle);
-            $stmtInsertDetalle->bindParam(':id_ruta', $idRuta, PDO::PARAM_INT);
-            $stmtInsertDetalle->bindParam(':descripcion', $descripcionRuta);
+            $stmtInsertDetalle->bindValue(':id_ruta', $idRuta, PDO::PARAM_INT);
+            $stmtInsertDetalle->bindValue(':descripcion', $descripcionRuta);
             $stmtInsertDetalle->execute();
         }
 
-        // Reemplazar municipios
         $sqlDeleteMunicipiosRuta = "DELETE FROM RutaMunicipios WHERE IdRuta = :id_ruta";
         $stmtDeleteMunicipiosRuta = $conn->prepare($sqlDeleteMunicipiosRuta);
-        $stmtDeleteMunicipiosRuta->bindParam(':id_ruta', $idRuta, PDO::PARAM_INT);
+        $stmtDeleteMunicipiosRuta->bindValue(':id_ruta', $idRuta, PDO::PARAM_INT);
         $stmtDeleteMunicipiosRuta->execute();
 
         $sqlInsertMunicipioRuta = "INSERT INTO RutaMunicipios (IdRuta, IdMunicipio, OrdenRecorrido)
@@ -263,19 +277,25 @@ try {
         $stmtInsertMunicipioRuta = $conn->prepare($sqlInsertMunicipioRuta);
 
         $ordenRecorrido = 1;
+
         foreach ($municipiosSeleccionados as $idMunicipio) {
             $idMunicipio = (int)$idMunicipio;
-            $stmtInsertMunicipioRuta->bindParam(':id_ruta', $idRuta, PDO::PARAM_INT);
-            $stmtInsertMunicipioRuta->bindParam(':id_municipio', $idMunicipio, PDO::PARAM_INT);
-            $stmtInsertMunicipioRuta->bindParam(':orden', $ordenRecorrido, PDO::PARAM_INT);
+
+            if ($idMunicipio <= 0) {
+                continue;
+            }
+
+            $stmtInsertMunicipioRuta->bindValue(':id_ruta', $idRuta, PDO::PARAM_INT);
+            $stmtInsertMunicipioRuta->bindValue(':id_municipio', $idMunicipio, PDO::PARAM_INT);
+            $stmtInsertMunicipioRuta->bindValue(':orden', $ordenRecorrido, PDO::PARAM_INT);
             $stmtInsertMunicipioRuta->execute();
+
             $ordenRecorrido++;
         }
 
-        // Reemplazar paradas
         $sqlDeleteParadas = "DELETE FROM ParadasRuta WHERE IdRuta = :id_ruta";
         $stmtDeleteParadas = $conn->prepare($sqlDeleteParadas);
-        $stmtDeleteParadas->bindParam(':id_ruta', $idRuta, PDO::PARAM_INT);
+        $stmtDeleteParadas->bindValue(':id_ruta', $idRuta, PDO::PARAM_INT);
         $stmtDeleteParadas->execute();
 
         if (isset($_POST['nombre_parada']) && is_array($_POST['nombre_parada'])) {
@@ -284,42 +304,47 @@ try {
             $stmtInsertParada = $conn->prepare($sqlInsertParada);
 
             $nombresParada = $_POST['nombre_parada'];
-            $direccionesParada = isset($_POST['direccion_parada']) ? $_POST['direccion_parada'] : [];
-            $observacionesParada = isset($_POST['observacion_parada']) ? $_POST['observacion_parada'] : [];
+            $direccionesParada = $_POST['direccion_parada'] ?? [];
+            $observacionesParada = $_POST['observacion_parada'] ?? [];
 
             $ordenParada = 1;
+
             for ($i = 0; $i < count($nombresParada); $i++) {
-                $nombreParada = trim($nombresParada[$i]);
-                $direccionReferencia = isset($direccionesParada[$i]) ? trim($direccionesParada[$i]) : "";
-                $observaciones = isset($observacionesParada[$i]) ? trim($observacionesParada[$i]) : "";
+                $nombreParada = trim($nombresParada[$i] ?? '');
+                $direccionReferencia = trim($direccionesParada[$i] ?? '');
+                $observaciones = trim($observacionesParada[$i] ?? '');
 
                 if ($nombreParada !== "") {
-                    $stmtInsertParada->bindParam(':id_ruta', $idRuta, PDO::PARAM_INT);
-                    $stmtInsertParada->bindParam(':nombre_parada', $nombreParada);
-                    $stmtInsertParada->bindParam(':direccion_referencia', $direccionReferencia);
-                    $stmtInsertParada->bindParam(':observaciones', $observaciones);
-                    $stmtInsertParada->bindParam(':orden_parada', $ordenParada, PDO::PARAM_INT);
+                    $stmtInsertParada->bindValue(':id_ruta', $idRuta, PDO::PARAM_INT);
+                    $stmtInsertParada->bindValue(':nombre_parada', $nombreParada);
+                    $stmtInsertParada->bindValue(':direccion_referencia', $direccionReferencia);
+                    $stmtInsertParada->bindValue(':observaciones', $observaciones);
+                    $stmtInsertParada->bindValue(':orden_parada', $ordenParada, PDO::PARAM_INT);
                     $stmtInsertParada->execute();
+
                     $ordenParada++;
                 }
             }
         }
 
         $conn->commit();
+
         $mensaje = "Ruta actualizada correctamente.";
         $idRutaSeleccionada = $idRuta;
     }
 
-    // =========================================
     // ELIMINAR RUTA
-    // =========================================
     if (isset($_POST['eliminar_ruta'])) {
-        $idRutaEliminar = (int)$_POST['id_ruta'];
+        $idRutaEliminar = (int)($_POST['id_ruta'] ?? 0);
+
+        if ($idRutaEliminar <= 0) {
+            throw new Exception("Ruta inválida.");
+        }
 
         $sqlValidarRuta = "SELECT IdRuta FROM Rutas WHERE IdRuta = :id_ruta AND IdEmpresa = :id_empresa";
         $stmtValidarRuta = $conn->prepare($sqlValidarRuta);
-        $stmtValidarRuta->bindParam(':id_ruta', $idRutaEliminar, PDO::PARAM_INT);
-        $stmtValidarRuta->bindParam(':id_empresa', $idEmpresa, PDO::PARAM_INT);
+        $stmtValidarRuta->bindValue(':id_ruta', $idRutaEliminar, PDO::PARAM_INT);
+        $stmtValidarRuta->bindValue(':id_empresa', $idEmpresa, PDO::PARAM_INT);
         $stmtValidarRuta->execute();
 
         if (!$stmtValidarRuta->fetch(PDO::FETCH_ASSOC)) {
@@ -328,8 +353,8 @@ try {
 
         $sqlEliminarRuta = "DELETE FROM Rutas WHERE IdRuta = :id_ruta AND IdEmpresa = :id_empresa";
         $stmtEliminarRuta = $conn->prepare($sqlEliminarRuta);
-        $stmtEliminarRuta->bindParam(':id_ruta', $idRutaEliminar, PDO::PARAM_INT);
-        $stmtEliminarRuta->bindParam(':id_empresa', $idEmpresa, PDO::PARAM_INT);
+        $stmtEliminarRuta->bindValue(':id_ruta', $idRutaEliminar, PDO::PARAM_INT);
+        $stmtEliminarRuta->bindValue(':id_empresa', $idEmpresa, PDO::PARAM_INT);
         $stmtEliminarRuta->execute();
 
         $mensaje = "Ruta eliminada correctamente.";
@@ -340,20 +365,21 @@ try {
     }
 
 } catch (PDOException $e) {
-    if ($conn->inTransaction()) {
+    if (isset($conn) && $conn->inTransaction()) {
         $conn->rollBack();
     }
+
     $error = "Error de base de datos: " . $e->getMessage();
+
 } catch (Exception $e) {
-    if ($conn->inTransaction()) {
+    if (isset($conn) && $conn->inTransaction()) {
         $conn->rollBack();
     }
+
     $error = $e->getMessage();
 }
 
-// =========================================
-// CARGAR MUNICIPIOS ACTIVOS
-// =========================================
+// CARGAR MUNICIPIOS
 $sqlMunicipios = "SELECT IdMunicipio, NombreMunicipio, Departamento
                   FROM Municipios
                   WHERE Estado = 1
@@ -361,22 +387,18 @@ $sqlMunicipios = "SELECT IdMunicipio, NombreMunicipio, Departamento
 $stmtMunicipios = $conn->query($sqlMunicipios);
 $municipios = $stmtMunicipios->fetchAll(PDO::FETCH_ASSOC);
 
-// =========================================
-// CARGAR RUTAS DE LA EMPRESA
-// =========================================
+// CARGAR RUTAS
 $sqlRutas = "SELECT r.IdRuta, r.NombreRuta, r.HoraInicio, r.HoraFin, r.Estado, rd.DescripcionRuta
              FROM Rutas r
              LEFT JOIN RutaDetalle rd ON r.IdRuta = rd.IdRuta
              WHERE r.IdEmpresa = :id_empresa
              ORDER BY r.IdRuta DESC";
 $stmtRutas = $conn->prepare($sqlRutas);
-$stmtRutas->bindParam(':id_empresa', $idEmpresa, PDO::PARAM_INT);
+$stmtRutas->bindValue(':id_empresa', $idEmpresa, PDO::PARAM_INT);
 $stmtRutas->execute();
 $rutas = $stmtRutas->fetchAll(PDO::FETCH_ASSOC);
 
-// =========================================
 // CARGAR RUTA SELECCIONADA
-// =========================================
 $municipiosSeleccionadosRuta = [];
 $paradasSeleccionadasRuta = [];
 
@@ -386,8 +408,8 @@ if ($idRutaSeleccionada > 0) {
                    LEFT JOIN RutaDetalle rd ON r.IdRuta = rd.IdRuta
                    WHERE r.IdRuta = :id_ruta AND r.IdEmpresa = :id_empresa";
     $stmtRutaSel = $conn->prepare($sqlRutaSel);
-    $stmtRutaSel->bindParam(':id_ruta', $idRutaSeleccionada, PDO::PARAM_INT);
-    $stmtRutaSel->bindParam(':id_empresa', $idEmpresa, PDO::PARAM_INT);
+    $stmtRutaSel->bindValue(':id_ruta', $idRutaSeleccionada, PDO::PARAM_INT);
+    $stmtRutaSel->bindValue(':id_empresa', $idEmpresa, PDO::PARAM_INT);
     $stmtRutaSel->execute();
     $rutaSeleccionada = $stmtRutaSel->fetch(PDO::FETCH_ASSOC);
 
@@ -397,7 +419,7 @@ if ($idRutaSeleccionada > 0) {
                              WHERE IdRuta = :id_ruta
                              ORDER BY OrdenRecorrido";
         $stmtMunicipiosSel = $conn->prepare($sqlMunicipiosSel);
-        $stmtMunicipiosSel->bindParam(':id_ruta', $idRutaSeleccionada, PDO::PARAM_INT);
+        $stmtMunicipiosSel->bindValue(':id_ruta', $idRutaSeleccionada, PDO::PARAM_INT);
         $stmtMunicipiosSel->execute();
         $municipiosSeleccionadosRuta = $stmtMunicipiosSel->fetchAll(PDO::FETCH_COLUMN);
 
@@ -406,13 +428,13 @@ if ($idRutaSeleccionada > 0) {
                           WHERE IdRuta = :id_ruta
                           ORDER BY OrdenParada";
         $stmtParadasSel = $conn->prepare($sqlParadasSel);
-        $stmtParadasSel->bindParam(':id_ruta', $idRutaSeleccionada, PDO::PARAM_INT);
+        $stmtParadasSel->bindValue(':id_ruta', $idRutaSeleccionada, PDO::PARAM_INT);
         $stmtParadasSel->execute();
         $paradasSeleccionadasRuta = $stmtParadasSel->fetchAll(PDO::FETCH_ASSOC);
     }
 }
 
-// municipios por ruta
+// MUNICIPIOS POR RUTA
 $municipiosPorRuta = [];
 $sqlMunicipiosRuta = "SELECT rm.IdRuta, rm.OrdenRecorrido, m.NombreMunicipio
                       FROM RutaMunicipios rm
@@ -421,7 +443,7 @@ $sqlMunicipiosRuta = "SELECT rm.IdRuta, rm.OrdenRecorrido, m.NombreMunicipio
                       WHERE r.IdEmpresa = :id_empresa
                       ORDER BY rm.IdRuta, rm.OrdenRecorrido";
 $stmtMunicipiosRuta = $conn->prepare($sqlMunicipiosRuta);
-$stmtMunicipiosRuta->bindParam(':id_empresa', $idEmpresa, PDO::PARAM_INT);
+$stmtMunicipiosRuta->bindValue(':id_empresa', $idEmpresa, PDO::PARAM_INT);
 $stmtMunicipiosRuta->execute();
 $rowsMunicipiosRuta = $stmtMunicipiosRuta->fetchAll(PDO::FETCH_ASSOC);
 
@@ -429,7 +451,7 @@ foreach ($rowsMunicipiosRuta as $row) {
     $municipiosPorRuta[$row['IdRuta']][] = $row['NombreMunicipio'];
 }
 
-// paradas por ruta
+// PARADAS POR RUTA
 $paradasPorRuta = [];
 $sqlParadasRuta = "SELECT p.IdRuta, p.OrdenParada, p.NombreParada, p.DireccionReferencia, p.Observaciones
                    FROM ParadasRuta p
@@ -437,7 +459,7 @@ $sqlParadasRuta = "SELECT p.IdRuta, p.OrdenParada, p.NombreParada, p.DireccionRe
                    WHERE r.IdEmpresa = :id_empresa
                    ORDER BY p.IdRuta, p.OrdenParada";
 $stmtParadasRuta = $conn->prepare($sqlParadasRuta);
-$stmtParadasRuta->bindParam(':id_empresa', $idEmpresa, PDO::PARAM_INT);
+$stmtParadasRuta->bindValue(':id_empresa', $idEmpresa, PDO::PARAM_INT);
 $stmtParadasRuta->execute();
 $rowsParadasRuta = $stmtParadasRuta->fetchAll(PDO::FETCH_ASSOC);
 
