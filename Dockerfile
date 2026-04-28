@@ -1,35 +1,32 @@
-FROM php:8.2-apache
+FROM php:8.3-apache
 
-# Dependencias
+# Instalar dependencias del sistema y driver ODBC de Microsoft
 RUN apt-get update && apt-get install -y \
-    unixodbc \
-    unixodbc-dev \
-    curl \
     gnupg2 \
+    curl \
     apt-transport-https \
     ca-certificates \
-    build-essential \
-    autoconf
+    unixodbc \
+    unixodbc-dev \
+    libgssapi-krb5-2 \
+    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+        | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" \
+        > /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y msodbcsql18 \
+    && pecl install sqlsrv pdo_sqlsrv \
+    && docker-php-ext-enable sqlsrv pdo_sqlsrv \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Clave Microsoft
-RUN curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg
-
-# Repo
-RUN echo "deb [signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/debian/11/prod bullseye main" > /etc/apt/sources.list.d/mssql-release.list
-
-# Driver ODBC
-RUN apt-get update && ACCEPT_EULA=Y apt-get install -y msodbcsql17
-
-# 🔥 AQUÍ ESTÁ LA CLAVE
-RUN docker-php-ext-configure pdo_odbc --with-pdo-odbc=unixODBC,/usr
-RUN docker-php-ext-install pdo_odbc
-
-# Apache
+# Activar mod_rewrite por si usas .htaccess
 RUN a2enmod rewrite
 
+# Copiar proyecto al servidor Apache
 COPY . /var/www/html/
+
+# Permisos básicos
 RUN chown -R www-data:www-data /var/www/html
 
 EXPOSE 80
-
-CMD ["apache2-foreground"]
